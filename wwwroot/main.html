@@ -1,0 +1,83 @@
+<h1 id="headline">OpenClicker</h1>
+
+<div style="margin: 8px 0;">
+    <button id="btnSetHotkey" onclick="setKeybind()">Hotkey setzen</button>
+    <span id="hotkeyText" style="margin-left:8px;color:#777;"></span>
+    <br />
+    <label>CPS</label>
+    <input type="number" name="cpsinput" min="0" max="10000" step="1" onchange="SetCps()">
+    <br />
+    <label>Click Duty</label>
+    <input type="number" name="clickDutyinput" min="0" max="100" step="1" onchange="SetClickDuty()">
+    <br />
+    <label>Mousebutton (left/middle/right)</label>
+    <br />
+    <input type="range" name="mousebuttonrange" min="0" max="2" step="1" onchange="SetMouseButton()">
+</div>
+
+<div id="status" style="margin:8px 0; font-family:monospace;">AutoClicker: OFF</div>
+
+<script>
+    function SetCps() {
+        const cpsValue = document.querySelector('input[name="cpsinput"]').value;
+        window.external.sendMessage(`setCps:${cpsValue}`);
+    }
+
+    function SetClickDuty() {
+        const clickdutyValue = document.querySelector('input[name="clickDutyinput"]').value;
+        window.external.sendMessage(`setClickDuty:${clickdutyValue}`);
+    }
+
+    function SetMouseButton() {
+        const el = document.querySelector('input[name="mousebuttonrange"]');
+        window.external.sendMessage(`setMouseButton:${el.value}`);
+    }
+
+    function setKeybind() {
+        const btn = document.getElementById('btnSetHotkey');
+        const txt = document.getElementById('hotkeyText');
+        btn.disabled = true;
+        txt.textContent = "Set keybind...";
+        window.external.sendMessage("setKeybind");
+    }
+
+    window.external.receiveMessage((message) => {
+        try {
+            const data = JSON.parse(message);
+
+            if (data.type === "title") {
+                document.getElementById("headline").innerText = data.text;
+                return;
+            }
+
+            if (data.type === "status") {
+                document.getElementById("status").textContent = data.text;
+                return;
+            }
+
+            if (data.type === "cps") {
+                document.getElementById("cps").textContent = data.text;
+                return;
+            }
+
+            if (data.type === "keybind") {
+                const btn = document.getElementById('btnSetHotkey');
+                const txt = document.getElementById('hotkeyText');
+                txt.textContent = data.text.replace(/^Hotkey set to:\s*/, "Hotkey: ");
+                if (/^Hotkey set to:/i.test(data.text)) {
+                    btn.disabled = false;
+                }
+                return;
+            }
+        } catch (ex) {
+            console.log("Error:", ex);
+        }
+
+        if (typeof message === "string" && message.startsWith("TITLE:")) {
+            document.getElementById("headline").innerText = message.slice(6);
+            return;
+        }
+
+        console.log("Message from backend:", message);
+    });
+</script>
