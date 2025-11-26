@@ -1,43 +1,102 @@
-<h1 id="headline">OpenClicker</h1>
+<!DOCTYPE html>
+<html>
 
-<div style="margin: 8px 0;">
-    <button id="btnSetHotkey" onclick="setKeybind()">Hotkey setzen</button>
-    <span id="hotkeyText" style="margin-left:8px;color:#777;"></span>
-    <br />
-    <label>CPS</label>
-    <input type="number" name="cpsinput" min="0" max="10000" step="1" onchange="SetCps()">
-    <br />
-    <label>Click Duty</label>
-    <input type="number" name="clickDutyinput" min="0" max="100" step="1" onchange="SetClickDuty()">
-    <br />
-    <label>Mousebutton (left/middle/right)</label>
-    <br />
-    <input type="range" name="mousebuttonrange" min="0" max="2" step="1" onchange="SetMouseButton()">
-</div>
+<head>
+    <link rel="stylesheet" href="assets/main.css">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+</head>
 
-<div id="status" style="margin:8px 0; font-family:monospace;">AutoClicker: OFF</div>
+<body>
+    <div class="d-flex flex-column">
+        <div class="d-flex align-center">
+            <h1>OpenClicker</h1>
+            <div
+                id="status"
+                class="ml-auto"
+                style="
+                    height: 10px;
+                    width: 10px;
+                    border-radius: 50%;
+                    background-color: #f00;
+                "
+            ></div>
+        </div>
+
+        <button
+            id="btnSetHotkey"
+            class="rounded"
+            onclick="setKeybind()"
+        >Tastenkombination setzen</button>
+
+        <div class="d-flex mt-6">
+            <!-- Clicks per second -->
+             <div class="d-flex flex-column" style="width: 50%">
+                <label for="cps">Klicks pro Sekunde</label>
+                <input
+                    id="cps"
+                    class="rounded mr-2"
+                    type="number"
+                    name="cpsinput"
+                    min="0"
+                    max="10000"
+                    step="1"
+                    onchange="setCps()"
+                />
+             </div>
+
+
+            <!-- Click duty -->
+             <div class="d-flex flex-column" style="width: 50%">
+                <label for="clickDuty">Klickgrad</label>
+                <input
+                    id="clickDuty"
+                    class="rounded ml-2"
+                    type="number"
+                    name="clickDutyinput"
+                    min="0"
+                    max="100"
+                    step="1"
+                    onchange="setClickDuty()"
+                />
+             </div>
+        </div>
+
+
+        <!-- Mouse button -->
+        <span class="mt-6 ml-4">Maustaste</span>
+        <div class="d-flex" style="justify-content: space-between;">
+            <label for="mbLeft">
+                <input type="radio" id="mbLeft" name="mouseButton" value="0" onchange="setMouseButton(0)">Links
+            </label>
+            <label for="mbMiddle">
+                <input type="radio" id="mbMiddle" class="" name="mouseButton" value="1" onchange="setMouseButton(1)">Mitte
+            </label>
+            <label for="mbRight">
+                <input type="radio" id="mbRight" class="" name="mouseButton" value="2" onchange="setMouseButton(2)">Rechts
+            </label>
+        </div>
+    </div>
+</body>
 
 <script>
-    function SetCps() {
+    function setCps() {
         const cpsValue = document.querySelector('input[name="cpsinput"]').value;
         window.external.sendMessage(`setCps:${cpsValue}`);
     }
 
-    function SetClickDuty() {
+    function setClickDuty(value) {
         const clickdutyValue = document.querySelector('input[name="clickDutyinput"]').value;
         window.external.sendMessage(`setClickDuty:${clickdutyValue}`);
     }
 
-    function SetMouseButton() {
-        const el = document.querySelector('input[name="mousebuttonrange"]');
-        window.external.sendMessage(`setMouseButton:${el.value}`);
+    function setMouseButton(value) {
+        window.external.sendMessage(`setMouseButton:${value}`);
     }
 
     function setKeybind() {
         const btn = document.getElementById('btnSetHotkey');
-        const txt = document.getElementById('hotkeyText');
         btn.disabled = true;
-        txt.textContent = "Set keybind...";
+        btn.innerText = "Drücke eine Tastenkombination..."
         window.external.sendMessage("setKeybind");
     }
 
@@ -51,7 +110,8 @@
             }
 
             if (data.type === "status") {
-                document.getElementById("status").textContent = data.text;
+                document.getElementById("status").style.backgroundColor =
+                    data.state === 1 ? "#0F0" : "#F00";
                 return;
             }
 
@@ -62,11 +122,11 @@
 
             if (data.type === "keybind") {
                 const btn = document.getElementById('btnSetHotkey');
-                const txt = document.getElementById('hotkeyText');
-                txt.textContent = data.text.replace(/^Hotkey set to:\s*/, "Hotkey: ");
-                if (/^Hotkey set to:/i.test(data.text)) {
+                btn.innerText = data.text.replace(/^Hotkey set to:\s*/, "Hotkey: ");
+
+                if (/^Hotkey set to:/i.test(data.text))
                     btn.disabled = false;
-                }
+
                 return;
             }
         } catch (ex) {
@@ -81,3 +141,5 @@
         console.log("Message from backend:", message);
     });
 </script>
+
+</html>

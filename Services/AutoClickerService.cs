@@ -24,7 +24,7 @@ internal static class AutoClickerService
 
         if (_autoClickEnabled)
         {
-            window.SendWebMessage("{\"type\":\"status\",\"text\":\"AutoClicker: ON\"}");
+            window.SendWebMessage("{\"type\":\"status\",\"state\":1}");
 
             _ = Task.Run(async () =>
             {
@@ -49,7 +49,7 @@ internal static class AutoClickerService
         }
         else
         {
-            window.SendWebMessage("{\"type\":\"status\",\"text\":\"AutoClicker: OFF\"}");
+            window.SendWebMessage("{\"type\":\"status\",\"state\":0}");
             return Task.CompletedTask;
         }
     }
