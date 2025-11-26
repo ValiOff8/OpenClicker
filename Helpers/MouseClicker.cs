@@ -1,7 +1,7 @@
 ﻿using SharpHook;
 using SharpHook.Data;
 
-namespace OpenClicker
+namespace OpenClicker.Helpers
 {
     class MouseClicker
     {
