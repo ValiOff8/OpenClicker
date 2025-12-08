@@ -44,7 +44,6 @@
                 />
              </div>
 
-
             <!-- Click duty -->
              <div class="d-flex flex-column" style="width: 50%">
                 <label for="clickDuty">Klickgrad</label>
@@ -61,7 +60,6 @@
              </div>
         </div>
 
-
         <!-- Mouse button -->
         <span class="mt-6 ml-4">Maustaste</span>
         <div class="d-flex" style="justify-content: space-between;">
@@ -75,6 +73,14 @@
                 <input type="radio" id="mbRight" class="" name="mouseButton" value="2" onchange="setMouseButton(2)">Rechts
             </label>
         </div>
+
+        <!-- Hold / Toggle mode -->
+        <div class="d-flex mt-6" style="align-items:center;">
+            <label style="display:inline-flex;align-items:center;gap:8px;">
+                <input id="holdModeCheckbox" type="checkbox" onchange="setHoldMode()">
+                <span>Halten zum Aktivieren (aus = Umschalten)</span>
+            </label>
+        </div>
     </div>
 </body>
 
@@ -84,7 +90,7 @@
         window.external.sendMessage(`setCps:${cpsValue}`);
     }
 
-    function setClickDuty(value) {
+    function setClickDuty() {
         const clickdutyValue = document.querySelector('input[name="clickDutyinput"]').value;
         window.external.sendMessage(`setClickDuty:${clickdutyValue}`);
     }
@@ -100,12 +106,18 @@
         window.external.sendMessage("setKeybind");
     }
 
+    function setHoldMode() {
+        const cb = document.getElementById('holdModeCheckbox');
+        window.external.sendMessage(`setHoldMode:${cb.checked}`);
+    }
+
     window.external.receiveMessage((message) => {
         try {
             const data = JSON.parse(message);
 
             if (data.type === "title") {
-                document.getElementById("headline").innerText = data.text;
+                const h = document.querySelector("h1");
+                if (h) h.innerText = data.text;
                 return;
             }
 
@@ -116,7 +128,8 @@
             }
 
             if (data.type === "cps") {
-                document.getElementById("cps").textContent = data.text;
+                const el = document.getElementById("cps");
+                if (el) el.value = data.text;
                 return;
             }
 
@@ -129,12 +142,21 @@
 
                 return;
             }
+
+            if (data.type === "holdMode") {
+                const cb = document.getElementById('holdModeCheckbox');
+                if (cb !== null && cb !== undefined) {
+                    cb.checked = data.enabled ? true : false;
+                }
+                return;
+            }
         } catch (ex) {
             console.log("Error:", ex);
         }
 
         if (typeof message === "string" && message.startsWith("TITLE:")) {
-            document.getElementById("headline").innerText = message.slice(6);
+            const h = document.querySelector("h1");
+            if (h) h.innerText = message.slice(6);
             return;
         }
 

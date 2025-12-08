@@ -1,8 +1,7 @@
-﻿using OpenClicker.Helpers;
+﻿using OpenClicker.Services;
 using Photino.NET;
 using SharpHook;
 using SharpHook.Data;
-using OpenClicker.Services;
 
 namespace OpenClicker;
 
@@ -69,6 +68,11 @@ internal class Program
             else if (message == "setKeybind")
             {
                 await SetKeybind(window);
+                return;
+            }
+            else if (message.StartsWith("setHoldMode:"))
+            {
+                await SetHoldMode(message);
                 return;
             }
         }
@@ -139,6 +143,17 @@ internal class Program
         Console.WriteLine($"Hotkey set to: {human}");
     }
 
+    static private Task SetHoldMode(string message)
+    {
+        var payload = message.Substring("setHoldMode:".Length);
+        if (bool.TryParse(payload, out var holdMode))
+        {
+            AutoClickerService.SetHoldMode(holdMode);
+            Console.WriteLine($"Hold mode updated to: {holdMode}");
+        }
+        return Task.CompletedTask;
+    }
+
     private static void OnGlobalKeyPressed(object? sender, KeyboardHookEventArgs e)
     {
         if (HotkeyCaptureService.IsCapturing)
@@ -154,11 +169,40 @@ internal class Program
             return;
         }
 
+        if (AutoClickerService.HoldToActivate)
+        {
+            if (_currentHotkey is not null && !_currentHotkey.Value.IsMouse)
+            {
+                if (!_hotkeyLatched && IsHotkeyDown(_currentHotkey.Value))
+                {
+                    _hotkeyLatched = true;
+                    _ = AutoClickerService.Start(_mainWindow);
+                }
+            }
+            return;
+        }
+
         TryToggleByHotkey();
     }
 
     private static void OnGlobalKeyReleased(object? sender, KeyboardHookEventArgs e)
     {
+        if (HotkeyCaptureService.IsCapturing)
+            return;
+
+        if (AutoClickerService.HoldToActivate)
+        {
+            if (_currentHotkey is not null && !_currentHotkey.Value.IsMouse)
+            {
+                if (_currentHotkey.Value.Key == e.Data.KeyCode && _hotkeyLatched)
+                {
+                    _hotkeyLatched = false;
+                    _ = AutoClickerService.Stop(_mainWindow);
+                }
+            }
+            return;
+        }
+
         if (_currentHotkey is not null && !_currentHotkey.Value.IsMouse)
             if (_currentHotkey.Value.Key == e.Data.KeyCode)
                 _hotkeyLatched = false;
@@ -173,11 +217,40 @@ internal class Program
             return;
         }
 
+        if (AutoClickerService.HoldToActivate)
+        {
+            if (_currentHotkey is not null && _currentHotkey.Value.IsMouse)
+            {
+                if (!_hotkeyLatched && IsHotkeyDown(_currentHotkey.Value))
+                {
+                    _hotkeyLatched = true;
+                    _ = AutoClickerService.Start(_mainWindow);
+                }
+            }
+            return;
+        }
+
         TryToggleByHotkey();
     }
 
     private static void OnGlobalMouseReleased(object? sender, MouseHookEventArgs e)
     {
+        if (HotkeyCaptureService.IsCapturing)
+            return;
+
+        if (AutoClickerService.HoldToActivate)
+        {
+            if (_currentHotkey is not null && _currentHotkey.Value.IsMouse)
+            {
+                if (_currentHotkey.Value.Mouse == e.Data.Button && _hotkeyLatched)
+                {
+                    _hotkeyLatched = false;
+                    _ = AutoClickerService.Stop(_mainWindow);
+                }
+            }
+            return;
+        }
+
         if (_currentHotkey is not null && _currentHotkey.Value.IsMouse)
         {
             if (_currentHotkey.Value.Mouse == e.Data.Button)
