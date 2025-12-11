@@ -11,9 +11,9 @@
         <div class="d-flex align-center">
             <h1>OpenClicker</h1>
             <div
-                id="status"
-                class="ml-auto"
-                style="
+                 id="status"
+                 class="ml-auto"
+                 style="
                     height: 10px;
                     width: 10px;
                     border-radius: 50%;
@@ -22,64 +22,72 @@
             ></div>
         </div>
 
-        <button
-            id="btnSetHotkey"
-            class="rounded"
-            onclick="setKeybind()"
-        >Tastenkombination setzen</button>
+        <button 
+                id="btnSetHotkey"
+                class="rounded"
+                onclick="setKeybind()"
+                data-i18n="btnSetHotkey"
+            >Set hotkey</button>
 
         <div class="d-flex mt-6">
             <!-- Clicks per second -->
-             <div class="d-flex flex-column" style="width: 50%">
-                <label for="cps">Klicks pro Sekunde</label>
-                <input
-                    id="cps"
-                    class="rounded mr-2"
-                    type="number"
-                    name="cpsinput"
-                    min="0"
-                    max="10000"
-                    step="1"
-                    onchange="setCps()"
-                />
-             </div>
+            <div class="d-flex flex-column" style="width: 50%">
+                <label for="cps" data-i18n="cpsLabel">Clicks per second</label>
+                <input 
+                       id="cps"
+                       class="rounded mr-2"
+                       type="number"
+                       name="cpsinput"
+                       min="0"
+                       max="10000"
+                       step="1"
+                       onchange="setCps()"
+                       />
+            </div>
 
             <!-- Click duty -->
-             <div class="d-flex flex-column" style="width: 50%">
-                <label for="clickDuty">Klickgrad</label>
-                <input
-                    id="clickDuty"
-                    class="rounded ml-2"
-                    type="number"
-                    name="clickDutyinput"
-                    min="0"
-                    max="100"
-                    step="1"
-                    onchange="setClickDuty()"
-                />
-             </div>
+            <div class="d-flex flex-column" style="width: 50%">
+                <label for="clickDuty" data-i18n="dutyLabel">Click duty</label>
+                <input 
+                       id="clickDuty"
+                       class="rounded ml-2"
+                       type="number"
+                       name="clickDutyinput"
+                       min="0"
+                       max="100"
+                       step="1"
+                       onchange="setClickDuty()" 
+                       />
+            </div>
         </div>
 
         <!-- Mouse button -->
-        <span class="mt-6 ml-4">Maustaste</span>
+        <span class="mt-6 ml-4" data-i18n="mouseLabel">Mouse button</span>
         <div class="d-flex" style="justify-content: space-between;">
             <label for="mbLeft">
-                <input type="radio" id="mbLeft" name="mouseButton" value="0" onchange="setMouseButton(0)" checked>Links
+                <input type="radio" id="mbLeft" name="mouseButton" value="0" onchange="setMouseButton(0)" checked>Left
             </label>
             <label for="mbMiddle">
-                <input type="radio" id="mbMiddle" class="" name="mouseButton" value="1" onchange="setMouseButton(1)">Mitte
+                <input type="radio" id="mbMiddle" class="" name="mouseButton" value="1" onchange="setMouseButton(1)">Middle
             </label>
             <label for="mbRight">
-                <input type="radio" id="mbRight" class="" name="mouseButton" value="2" onchange="setMouseButton(2)">Rechts
+                <input type="radio" id="mbRight" class="" name="mouseButton" value="2" onchange="setMouseButton(2)">Right
             </label>
         </div>
 
-        <!-- Hold / Toggle mode -->
-        <div class="d-flex mt-6" style="align-items:center;">
+        <!-- Hold / Toggle mode & Language Button -->
+        <div class="d-flex mt-6 hold-lang-row" style="align-items:center; justify-content: space-between;">
             <label style="display:inline-flex;align-items:center;gap:8px;">
                 <input id="holdModeCheckbox" type="checkbox" onchange="setHoldMode()">
-                <span>Halten zum Aktivieren (aus = Umschalten)</span>
+                <span data-i18n="holdModeLabel">Hold to activate (off = toggle)</span>
             </label>
+
+            <button id="btnLang"
+                    class="rounded lang-btn"
+                    onclick="switchLang()"
+                    data-i18n="langToggle">
+                EN / DE
+            </button>
         </div>
     </div>
 </body>
@@ -164,4 +172,55 @@
     });
 </script>
 
+<script type="text/javascript">
+    var translations = {};
+    var currentLang = "en";
+
+    function loadTranslations() {
+        var xhr = new XMLHttpRequest();
+        xhr.open("GET", "assets/lang.json", true);
+
+        xhr.onreadystatechange = function () {
+            if (xhr.readyState === 4) {
+                if (xhr.status === 200) {
+                    try {
+                        translations = JSON.parse(xhr.responseText);
+                        applyTranslations();
+                    } catch (e) {
+                        console.log("Failed to parse translations:", e);
+                    }
+                } else {
+                    console.log("Failed to load translations. Status:", xhr.status);
+                }
+            }
+        };
+
+        xhr.send();
+    }
+
+    function switchLang() {
+        currentLang = currentLang === "de" ? "en" : "de";
+
+        applyTranslations();
+    }
+
+    function applyTranslations() {
+        var t = translations[currentLang] || {};
+
+        var elements = document.querySelectorAll("[data-i18n]");
+
+        for (var i = 0; i < elements.length; i++) {
+            var elemnt = elements[i];
+            var key = elemnt.getAttribute("data-i18n");
+            var value = t[key];
+            if (typeof value === "string") {
+                elemnt.innerText = value;
+            }
+        }
+    }
+
+    document.addEventListener("DOMContentLoaded", function () {
+        loadTranslations();
+    });
+</script>
 </html>

@@ -91,6 +91,19 @@ table input {
     align-items: center;
 }
 
+.hold-lang-row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+}
+
+.lang-btn {
+    padding: 4px 12px;
+    font-size: 12px;
+    margin-left: 20px;
+    align-self: center;
+}
+
 /* Margins */
 .mt-1 {
     margin-top: 4px;
