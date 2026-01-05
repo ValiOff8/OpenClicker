@@ -1,4 +1,5 @@
-﻿using OpenClicker.Services;
+﻿using OpenClicker.Models;
+using OpenClicker.Services;
 using Photino.NET;
 using SharpHook;
 using SharpHook.Data;
@@ -14,10 +15,23 @@ internal class Program
     private static Hotkey? _currentHotkey;
     private static bool _hotkeyLatched = false;
     private static PhotinoWindow _mainWindow = null!;
+    private static Settings _settings = new Settings();
 
     [STAThread]
     static void Main(string[] args)
     {
+        _settings = SettingsService.LoadSettings();
+        _cps = _settings.Cps;
+        _dutyPercent = _settings.ClickDuty;
+        _mouseButton = _settings.MouseButton switch
+        {
+            0 => MouseButton.Button1,
+            1 => MouseButton.Button3,
+            2 => MouseButton.Button2,
+            _ => MouseButton.Button1
+        };
+        _currentHotkey = SettingsService.HotkeyDataToHotkey(_settings.Hotkey);
+        
         InputHookService.Initialize();
         InputHookService.KeyPressed += OnGlobalKeyPressed;
         InputHookService.KeyReleased += OnGlobalKeyReleased;
@@ -25,6 +39,7 @@ internal class Program
         InputHookService.MouseReleased += OnGlobalMouseReleased;
 
         AutoClickerService.UpdateSettings(_cps, _dutyPercent, _mouseButton);
+        AutoClickerService.SetHoldMode(_settings.HoldMode);
 
         _mainWindow =
             new PhotinoWindow()
@@ -36,9 +51,30 @@ internal class Program
                 .Center()
                 .Load("wwwroot/main.html");
 
+        Task.Run(async () =>
+        {
+            await Task.Delay(500); // small delay to ensure page is loaded
+            SendInitialSettings();
+        });
+
         _mainWindow.WaitForClose();
 
         InputHookService.Dispose();
+    }
+
+    static void SendInitialSettings()
+    {
+        _mainWindow?.SendWebMessage($"{{\"type\":\"cps\",\"text\":\"{_cps}\"}}");
+        _mainWindow?.SendWebMessage($"{{\"type\":\"clickDuty\",\"text\":\"{_dutyPercent}\"}}");
+        _mainWindow?.SendWebMessage($"{{\"type\":\"mouseButton\",\"value\":{_settings.MouseButton}}}");
+        _mainWindow?.SendWebMessage($"{{\"type\":\"holdMode\",\"enabled\":{(_settings.HoldMode ? "true" : "false")}}}");
+        _mainWindow?.SendWebMessage($"{{\"type\":\"language\",\"lang\":\"{_settings.Language}\"}}");
+        
+        if (_currentHotkey.HasValue)
+        {
+            var human = HotkeyService.HumanizeHotkey(_currentHotkey.Value);
+            _mainWindow?.SendWebMessage($"{{\"type\":\"keybind\",\"text\":\"Hotkey set to: {HotkeyService.EscapeForJson(human)}\"}}");
+        }
     }
 
     static async void RouteMessageDelegate(object sender, string message)
@@ -75,6 +111,11 @@ internal class Program
                 await SetHoldMode(message);
                 return;
             }
+            else if (message.StartsWith("setLanguage:"))
+            {
+                await SetLanguage(message);
+                return;
+            }
         }
         catch (Exception ex)
         {
@@ -87,7 +128,9 @@ internal class Program
         if (int.TryParse(message.Substring(7), out var cpsValue))
         {
             _cps = cpsValue;
+            _settings.Cps = cpsValue;
             AutoClickerService.UpdateSettings(_cps, _dutyPercent, _mouseButton);
+            SettingsService.SaveSettings(_settings);
             Console.WriteLine($"cps updated to: {cpsValue}");
         }
         return Task.CompletedTask;
@@ -98,7 +141,9 @@ internal class Program
         if (int.TryParse(message.Substring("setClickDuty:".Length), out var duty))
         {
             _dutyPercent = Math.Clamp(duty, 0, 100);
+            _settings.ClickDuty = _dutyPercent;
             AutoClickerService.UpdateSettings(_cps, _dutyPercent, _mouseButton);
+            SettingsService.SaveSettings(_settings);
             Console.WriteLine($"duty updated to: {_dutyPercent}%");
         }
         return Task.CompletedTask;
@@ -116,7 +161,9 @@ internal class Program
                 2 => MouseButton.Button2, // Right
                 _ => MouseButton.Button1, // Default Left
             };
+            _settings.MouseButton = mouseButtonValue;
             AutoClickerService.UpdateSettings(_cps, _dutyPercent, _mouseButton);
+            SettingsService.SaveSettings(_settings);
             Console.WriteLine($"Mousebutton updated to: {_mouseButton}");
         }
         return Task.CompletedTask;
@@ -137,6 +184,8 @@ internal class Program
 
         _currentHotkey = newHotkey;
         _hotkeyLatched = false;
+        _settings.Hotkey = SettingsService.HotkeyToHotkeyData(_currentHotkey);
+        SettingsService.SaveSettings(_settings);
 
         var human = HotkeyService.HumanizeHotkey(newHotkey);
         window.SendWebMessage($"{{\"type\":\"keybind\",\"text\":\"Hotkey set to: {HotkeyService.EscapeForJson(human)}\"}}");
@@ -148,8 +197,22 @@ internal class Program
         var payload = message.Substring("setHoldMode:".Length);
         if (bool.TryParse(payload, out var holdMode))
         {
+            _settings.HoldMode = holdMode;
             AutoClickerService.SetHoldMode(holdMode);
+            SettingsService.SaveSettings(_settings);
             Console.WriteLine($"Hold mode updated to: {holdMode}");
+        }
+        return Task.CompletedTask;
+    }
+
+    static private Task SetLanguage(string message)
+    {
+        var payload = message.Substring("setLanguage:".Length);
+        if (!string.IsNullOrEmpty(payload))
+        {
+            _settings.Language = payload;
+            SettingsService.SaveSettings(_settings);
+            Console.WriteLine($"Language updated to: {payload}");
         }
         return Task.CompletedTask;
     }
@@ -296,7 +359,6 @@ internal class Program
             }
         }
 
-        //TODO: add delay so you can't accidentally toggle multiple times by holding the key down too long
         if (hk.IsMouse)
             return InputHookService.IsMousePressed(hk.Mouse!.Value);
         else

@@ -65,13 +65,13 @@
         <span class="mt-6 ml-4" data-i18n="mouseLabel">Mouse button</span>
         <div class="d-flex" style="justify-content: space-between;">
             <label for="mbLeft">
-                <input type="radio" id="mbLeft" name="mouseButton" value="0" onchange="setMouseButton(0)" checked>Left
+                <input type="radio" id="mbLeft" name="mouseButton" value="0" onchange="setMouseButton(0)" checked><span data-i18n="mouseLeft">Left</span>
             </label>
             <label for="mbMiddle">
-                <input type="radio" id="mbMiddle" class="" name="mouseButton" value="1" onchange="setMouseButton(1)">Middle
+                <input type="radio" id="mbMiddle" class="" name="mouseButton" value="1" onchange="setMouseButton(1)"><span data-i18n="mouseMiddle">Middle</span>
             </label>
             <label for="mbRight">
-                <input type="radio" id="mbRight" class="" name="mouseButton" value="2" onchange="setMouseButton(2)">Right
+                <input type="radio" id="mbRight" class="" name="mouseButton" value="2" onchange="setMouseButton(2)"><span data-i18n="mouseRight">Right</span>
             </label>
         </div>
 
@@ -110,7 +110,7 @@
     function setKeybind() {
         const btn = document.getElementById('btnSetHotkey');
         btn.disabled = true;
-        btn.innerText = "DrÃ¼cke eine Tastenkombination..."
+        btn.innerText = "Drücke eine Tastenkombination..."
         window.external.sendMessage("setKeybind");
     }
 
@@ -141,6 +141,20 @@
                 return;
             }
 
+            if (data.type === "clickDuty") {
+                const el = document.getElementById("clickDuty");
+                if (el) el.value = data.text;
+                return;
+            }
+
+            if (data.type === "mouseButton") {
+                const value = parseInt(data.value);
+                if (value === 0) document.getElementById("mbLeft").checked = true;
+                else if (value === 1) document.getElementById("mbMiddle").checked = true;
+                else if (value === 2) document.getElementById("mbRight").checked = true;
+                return;
+            }
+
             if (data.type === "keybind") {
                 const btn = document.getElementById('btnSetHotkey');
                 btn.innerText = data.text.replace(/^Hotkey set to:\s*/, "Hotkey: ");
@@ -156,6 +170,12 @@
                 if (cb !== null && cb !== undefined) {
                     cb.checked = data.enabled ? true : false;
                 }
+                return;
+            }
+
+            if (data.type === "language") {
+                currentLang = data.lang || "en";
+                applyTranslations();
                 return;
             }
         } catch (ex) {
@@ -200,7 +220,7 @@
 
     function switchLang() {
         currentLang = currentLang === "de" ? "en" : "de";
-
+        window.external.sendMessage(`setLanguage:${currentLang}`);
         applyTranslations();
     }
 
