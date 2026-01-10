@@ -9,55 +9,48 @@
 <body>
     <div class="d-flex flex-column">
         <div class="d-flex align-center">
-            <h1>OpenClicker</h1>
-            <div
-                 id="status"
+            <div id="status"
                  class="ml-auto"
                  style="
                     height: 10px;
                     width: 10px;
                     border-radius: 50%;
                     background-color: #f00;
-                "
-            ></div>
+                "></div>
         </div>
 
-        <button 
-                id="btnSetHotkey"
+        <button id="btnSetHotkey"
                 class="rounded"
                 onclick="setKeybind()"
-                data-i18n="btnSetHotkey"
-            >Set hotkey</button>
+                data-i18n="btnSetHotkey">
+            Set hotkey
+        </button>
 
         <div class="d-flex mt-6">
             <!-- Clicks per second -->
             <div class="d-flex flex-column" style="width: 50%">
                 <label for="cps" data-i18n="cpsLabel">Clicks per second</label>
-                <input 
-                       id="cps"
+                <input id="cps"
                        class="rounded mr-2"
                        type="number"
                        name="cpsinput"
                        min="0"
                        max="10000"
                        step="1"
-                       onchange="setCps()"
-                       />
+                       onchange="setCps()" />
             </div>
 
             <!-- Click duty -->
             <div class="d-flex flex-column" style="width: 50%">
                 <label for="clickDuty" data-i18n="dutyLabel">Click duty</label>
-                <input 
-                       id="clickDuty"
+                <input id="clickDuty"
                        class="rounded ml-2"
                        type="number"
                        name="clickDutyinput"
                        min="0"
                        max="100"
                        step="1"
-                       onchange="setClickDuty()" 
-                       />
+                       onchange="setClickDuty()" />
             </div>
         </div>
 
@@ -90,157 +83,9 @@
             </button>
         </div>
     </div>
+
+    <script src="assets/i18n.js"></script>
+    <script src="assets/app.js"></script>
 </body>
 
-<script>
-    function setCps() {
-        const cpsValue = document.querySelector('input[name="cpsinput"]').value;
-        window.external.sendMessage(`setCps:${cpsValue}`);
-    }
-
-    function setClickDuty() {
-        const clickdutyValue = document.querySelector('input[name="clickDutyinput"]').value;
-        window.external.sendMessage(`setClickDuty:${clickdutyValue}`);
-    }
-
-    function setMouseButton(value) {
-        window.external.sendMessage(`setMouseButton:${value}`);
-    }
-
-    function setKeybind() {
-        const btn = document.getElementById('btnSetHotkey');
-        btn.disabled = true;
-        btn.innerText = "Drücke eine Tastenkombination..."
-        window.external.sendMessage("setKeybind");
-    }
-
-    function setHoldMode() {
-        const cb = document.getElementById('holdModeCheckbox');
-        window.external.sendMessage(`setHoldMode:${cb.checked}`);
-    }
-
-    window.external.receiveMessage((message) => {
-        try {
-            const data = JSON.parse(message);
-
-            if (data.type === "title") {
-                const h = document.querySelector("h1");
-                if (h) h.innerText = data.text;
-                return;
-            }
-
-            if (data.type === "status") {
-                document.getElementById("status").style.backgroundColor =
-                    data.state === 1 ? "#0F0" : "#F00";
-                return;
-            }
-
-            if (data.type === "cps") {
-                const el = document.getElementById("cps");
-                if (el) el.value = data.text;
-                return;
-            }
-
-            if (data.type === "clickDuty") {
-                const el = document.getElementById("clickDuty");
-                if (el) el.value = data.text;
-                return;
-            }
-
-            if (data.type === "mouseButton") {
-                const value = parseInt(data.value);
-                if (value === 0) document.getElementById("mbLeft").checked = true;
-                else if (value === 1) document.getElementById("mbMiddle").checked = true;
-                else if (value === 2) document.getElementById("mbRight").checked = true;
-                return;
-            }
-
-            if (data.type === "keybind") {
-                const btn = document.getElementById('btnSetHotkey');
-                btn.innerText = data.text.replace(/^Hotkey set to:\s*/, "Hotkey: ");
-
-                if (/^Hotkey set to:/i.test(data.text))
-                    btn.disabled = false;
-
-                return;
-            }
-
-            if (data.type === "holdMode") {
-                const cb = document.getElementById('holdModeCheckbox');
-                if (cb !== null && cb !== undefined) {
-                    cb.checked = data.enabled ? true : false;
-                }
-                return;
-            }
-
-            if (data.type === "language") {
-                currentLang = data.lang || "en";
-                applyTranslations();
-                return;
-            }
-        } catch (ex) {
-            console.log("Error:", ex);
-        }
-
-        if (typeof message === "string" && message.startsWith("TITLE:")) {
-            const h = document.querySelector("h1");
-            if (h) h.innerText = message.slice(6);
-            return;
-        }
-
-        console.log("Message from backend:", message);
-    });
-</script>
-
-<script type="text/javascript">
-    var translations = {};
-    var currentLang = "en";
-
-    function loadTranslations() {
-        var xhr = new XMLHttpRequest();
-        xhr.open("GET", "assets/lang.json", true);
-
-        xhr.onreadystatechange = function () {
-            if (xhr.readyState === 4) {
-                if (xhr.status === 200) {
-                    try {
-                        translations = JSON.parse(xhr.responseText);
-                        applyTranslations();
-                    } catch (e) {
-                        console.log("Failed to parse translations:", e);
-                    }
-                } else {
-                    console.log("Failed to load translations. Status:", xhr.status);
-                }
-            }
-        };
-
-        xhr.send();
-    }
-
-    function switchLang() {
-        currentLang = currentLang === "de" ? "en" : "de";
-        window.external.sendMessage(`setLanguage:${currentLang}`);
-        applyTranslations();
-    }
-
-    function applyTranslations() {
-        var t = translations[currentLang] || {};
-
-        var elements = document.querySelectorAll("[data-i18n]");
-
-        for (var i = 0; i < elements.length; i++) {
-            var elemnt = elements[i];
-            var key = elemnt.getAttribute("data-i18n");
-            var value = t[key];
-            if (typeof value === "string") {
-                elemnt.innerText = value;
-            }
-        }
-    }
-
-    document.addEventListener("DOMContentLoaded", function () {
-        loadTranslations();
-    });
-</script>
 </html>

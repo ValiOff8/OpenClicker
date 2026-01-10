@@ -46,8 +46,9 @@ internal class Program
                 .SetTitle("Open Clicker")
                 .RegisterWebMessageReceivedHandler(RouteMessageDelegate!)
                 .SetUseOsDefaultSize(false)
-                .SetWidth(550)
-                .SetHeight(500)
+                .SetResizable(false)
+                .SetWidth(500)
+                .SetHeight(310)
                 .Center()
                 .Load("wwwroot/main.html");
 
