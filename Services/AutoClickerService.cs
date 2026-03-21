@@ -46,12 +46,18 @@ internal static class AutoClickerService
         {
             while (_autoClickEnabled)
             {
-                var cps = Math.Max(1, _cps);
-                var periodMs = 1000.0 / cps;
+                if (!ProcessFilterService.IsClickAllowed())
+                {
+                    await Task.Delay(50);
+                    continue;
+                }
 
-                var duty = Math.Clamp(_dutyPercent, 0, 100) / 100.0; // 0..1
-                var downMs = (int)Math.Round(periodMs * duty);
-                var upMs = (int)Math.Round(periodMs - downMs);
+                int cps = Math.Max(1, _cps);
+                double periodMs = 1000.0 / cps;
+
+                double duty = Math.Clamp(_dutyPercent, 0, 100) / 100.0;
+                int downMs = (int)Math.Round(periodMs * duty);
+                int upMs = (int)Math.Round(periodMs - downMs);
 
                 await MouseClicker.Down(_mouse_button);
                 await Task.Delay(Math.Max(0, downMs));

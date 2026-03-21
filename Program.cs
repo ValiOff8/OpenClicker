@@ -1,4 +1,8 @@
-﻿using OpenClicker.Models;
+﻿using System.Text.Json;
+using OpenClicker.Abstractions;
+using OpenClicker.Models;
+using OpenClicker.Platform.Linux;
+using OpenClicker.Platform.Windows;
 using OpenClicker.Services;
 using Photino.NET;
 using SharpHook;
@@ -11,15 +15,18 @@ internal class Program
     private static int _cps = 10;
     private static int _dutyPercent = 50;
     private static MouseButton _mouseButton = MouseButton.Button1;
-    private static volatile bool _isCapturingHotkey = false;
     private static Hotkey? _currentHotkey;
     private static bool _hotkeyLatched = false;
     private static PhotinoWindow _mainWindow = null!;
     private static Settings _settings = new Settings();
+    private static IProcessEnumerator _processEnumerator = null!;
 
     [STAThread]
     static void Main(string[] args)
     {
+        _processEnumerator = CreateProcessEnumerator();
+        ProcessFilterService.Initialize(_processEnumerator);
+
         _settings = SettingsService.LoadSettings();
         _cps = _settings.Cps;
         _dutyPercent = _settings.ClickDuty;
@@ -48,13 +55,14 @@ internal class Program
                 .SetUseOsDefaultSize(false)
                 .SetResizable(false)
                 .SetWidth(500)
-                .SetHeight(310)
+                .SetHeight(360)
                 .Center()
                 .Load("wwwroot/main.html");
 
         Task.Run(async () =>
         {
-            await Task.Delay(500); // small delay to ensure page is loaded
+            // small delay to ensure page is loaded
+            await Task.Delay(500); 
             SendInitialSettings();
         });
 
@@ -73,7 +81,7 @@ internal class Program
         
         if (_currentHotkey.HasValue)
         {
-            var human = HotkeyService.HumanizeHotkey(_currentHotkey.Value);
+            string? human = HotkeyService.HumanizeHotkey(_currentHotkey.Value);
             _mainWindow?.SendWebMessage($"{{\"type\":\"keybind\",\"text\":\"Hotkey set to: {HotkeyService.EscapeForJson(human)}\"}}");
         }
     }
@@ -115,6 +123,11 @@ internal class Program
             else if (message.StartsWith("setLanguage:"))
             {
                 await SetLanguage(message);
+                return;
+            }
+            else if (message == "openItemSelector")
+            {
+                OpenItemSelector();
                 return;
             }
         }
@@ -195,7 +208,7 @@ internal class Program
 
     static private Task SetHoldMode(string message)
     {
-        var payload = message.Substring("setHoldMode:".Length);
+        string? payload = message.Substring("setHoldMode:".Length);
         if (bool.TryParse(payload, out var holdMode))
         {
             _settings.HoldMode = holdMode;
@@ -216,6 +229,80 @@ internal class Program
             Console.WriteLine($"Language updated to: {payload}");
         }
         return Task.CompletedTask;
+    }
+
+    static private void OpenItemSelector()
+    {
+        List<ProcessItem> processes = _processEnumerator.GetVisibleWindowProcesses();
+        HashSet<int> alreadySelected = ProcessFilterService.GetSelectedProcessIds();
+
+        List<SelectableItem> items = processes.Select(p => new SelectableItem
+        {
+            Id = p.ProcessId,
+            Name = $"{p.ProcessName} \u2014 {p.WindowTitle}",
+            IsChecked = alreadySelected.Contains(p.ProcessId)
+        }).ToList();
+
+        string itemsJson = JsonSerializer.Serialize(items.Select(item => new
+        {
+            id = item.Id,
+            name = item.Name,
+            isChecked = item.IsChecked
+        }));
+
+        PhotinoWindow selectorWindow = new PhotinoWindow()
+            .SetTitle("Select Target Applications")
+            .SetUseOsDefaultSize(false)
+            .SetWidth(600)
+            .SetHeight(800)
+            .Center()
+            .Load("wwwroot/itemselector.html");
+
+        selectorWindow.RegisterWebMessageReceivedHandler((object? sender, string message) =>
+        {
+            try
+            {
+                using JsonDocument doc = JsonDocument.Parse(message);
+                JsonElement root = doc.RootElement;
+                string type = root.GetProperty("type").GetString() ?? "";
+
+                if (type == "toggleItem")
+                {
+                    int id = root.GetProperty("id").GetInt32();
+                    bool isChecked = root.GetProperty("isChecked").GetBoolean();
+
+                    if (isChecked)
+                        ProcessFilterService.AddProcess(id);
+                    else
+                        ProcessFilterService.RemoveProcess(id);
+
+                    Console.WriteLine($"Process {id} selected: {isChecked}");
+                }
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine($"ItemSelector message error: {ex}");
+            }
+        });
+
+        Task.Run(async () =>
+        {
+            await Task.Delay(500);
+            selectorWindow.SendWebMessage($"{{\"type\":\"items\",\"items\":{itemsJson}}}");
+        });
+
+        selectorWindow.WaitForClose();
+    }
+
+    static private IProcessEnumerator CreateProcessEnumerator()
+    {
+        if (OperatingSystem.IsWindows())
+            return new WindowsProcessEnumerator();
+
+        if (OperatingSystem.IsLinux())
+            return new LinuxX11ProcessEnumerator();
+
+        throw new PlatformNotSupportedException("Process enumeration is not yet supported on this platform.");
     }
 
     private static void OnGlobalKeyPressed(object? sender, KeyboardHookEventArgs e)

@@ -1,6 +1,7 @@
 const translations = {
     "en": {
         "btnSetHotkey": "Set hotkey",
+        "btnOpenItemSelector": "Select processes",
         "cpsLabel": "Clicks per second",
         "dutyLabel": "Click duty",
         "mouseLabel": "Mouse button",
@@ -12,6 +13,7 @@ const translations = {
     },
     "de": {
         "btnSetHotkey": "Tastenkombination setzen",
+        "btnOpenItemSelector": "Prozesse auswaehlen",
         "cpsLabel": "Klicks pro Sekunde",
         "dutyLabel": "Klickgrad",
         "mouseLabel": "Maustaste",

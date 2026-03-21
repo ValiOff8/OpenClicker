@@ -24,6 +24,10 @@ function setHoldMode() {
     window.external.sendMessage(`setHoldMode:${cb.checked}`);
 }
 
+function openItemSelector() {
+    window.external.sendMessage("openItemSelector");
+}
+
 window.external.receiveMessage((message) => {
     try {
         const data = JSON.parse(message);

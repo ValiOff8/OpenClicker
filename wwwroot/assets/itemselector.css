@@ -1,0 +1,37 @@
+.item-selector-container {
+    padding: 12px;
+    overflow-y: auto;
+    height: calc(100vh - 24px);
+}
+
+.item-grid {
+    width: 100%;
+    border-collapse: collapse;
+}
+
+.item-grid thead th {
+    position: sticky;
+    top: 0;
+    background-color: #1e1e1e;
+    text-align: left;
+    padding: 8px 12px;
+    border-bottom: 1px solid #444;
+}
+
+.item-grid tbody tr:hover {
+    background-color: #2a2a2a;
+}
+
+.item-grid td {
+    padding: 6px 12px;
+    border-bottom: 1px solid #333;
+}
+
+.col-check {
+    width: 40px;
+    text-align: center;
+}
+
+.col-name {
+    text-align: left;
+}
