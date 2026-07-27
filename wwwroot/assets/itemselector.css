@@ -4,6 +4,25 @@
     height: calc(100vh - 24px);
 }
 
+.selector-status,
+.selector-hint {
+    margin: 0 0 10px;
+    line-height: 1.4;
+}
+
+.selector-status {
+    color: #d7e8f2;
+}
+
+.selector-status.error {
+    color: #ff8f8f;
+}
+
+.selector-hint {
+    color: #aab6bd;
+    font-size: 13px;
+}
+
 .item-grid {
     width: 100%;
     border-collapse: collapse;
@@ -22,6 +41,11 @@
     background-color: #2a2a2a;
 }
 
+.item-grid tbody tr.expired {
+    color: #89949a;
+    text-decoration: line-through;
+}
+
 .item-grid td {
     padding: 6px 12px;
     border-bottom: 1px solid #333;
@@ -30,6 +54,10 @@
 .col-check {
     width: 40px;
     text-align: center;
+}
+
+.item-grid input[type="checkbox"] {
+    width: auto;
 }
 
 .col-name {

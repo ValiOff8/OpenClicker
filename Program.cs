@@ -1,4 +1,5 @@
-﻿using System.Text.Json;
+﻿using System.Globalization;
+using System.Text.Json;
 using OpenClicker.Abstractions;
 using OpenClicker.Models;
 using OpenClicker.Platform.Linux;
@@ -20,12 +21,15 @@ internal class Program
     private static PhotinoWindow _mainWindow = null!;
     private static Settings _settings = new Settings();
     private static IProcessEnumerator _processEnumerator = null!;
+    private static PhotinoWindow? _selectorWindow;
+    private static volatile bool _isShuttingDown;
 
     [STAThread]
     static void Main(string[] args)
     {
         _processEnumerator = CreateProcessEnumerator();
         ProcessFilterService.Initialize(_processEnumerator);
+        ProcessFilterService.SelectionExpired += OnSelectionExpired;
 
         _settings = SettingsService.LoadSettings();
         _cps = _settings.Cps;
@@ -53,22 +57,30 @@ internal class Program
                 .SetTitle("Open Clicker")
                 .RegisterWebMessageReceivedHandler(RouteMessageDelegate!)
                 .SetUseOsDefaultSize(false)
-                .SetResizable(false)
-                .SetWidth(500)
-                .SetHeight(360)
-                .Center()
-                .Load("wwwroot/main.html");
+                 .SetResizable(false)
+                 .SetWidth(500)
+                 .SetHeight(360)
+                 .Center()
+                 .RegisterWindowClosingHandler((object sender, EventArgs e) =>
+                 {
+                     _isShuttingDown = true;
+                     return false;
+                 })
+                 .Load("wwwroot/main.html");
 
-        Task.Run(async () =>
+        try
         {
-            // small delay to ensure page is loaded
-            await Task.Delay(500); 
-            SendInitialSettings();
-        });
-
-        _mainWindow.WaitForClose();
-
-        InputHookService.Dispose();
+            _mainWindow.WaitForClose();
+        }
+        finally
+        {
+            _isShuttingDown = true;
+            AutoClickerService.ShutdownAsync().GetAwaiter().GetResult();
+            ProcessFilterService.SelectionExpired -= OnSelectionExpired;
+            ProcessFilterService.ShutdownAsync().GetAwaiter().GetResult();
+            _processEnumerator.Dispose();
+            InputHookService.Dispose();
+        }
     }
 
     static void SendInitialSettings()
@@ -78,6 +90,7 @@ internal class Program
         _mainWindow?.SendWebMessage($"{{\"type\":\"mouseButton\",\"value\":{_settings.MouseButton}}}");
         _mainWindow?.SendWebMessage($"{{\"type\":\"holdMode\",\"enabled\":{(_settings.HoldMode ? "true" : "false")}}}");
         _mainWindow?.SendWebMessage($"{{\"type\":\"language\",\"lang\":\"{_settings.Language}\"}}");
+        SendProcessFilterCapability(_processEnumerator.Capability);
         
         if (_currentHotkey.HasValue)
         {
@@ -95,7 +108,12 @@ internal class Program
             if (string.IsNullOrEmpty(message))
                 return;
 
-            if (message.StartsWith("setCps:"))
+            if (message == "mainReady")
+            {
+                SendInitialSettings();
+                return;
+            }
+            else if (message.StartsWith("setCps:"))
             {
                 await SetCps(message);
                 return;
@@ -233,30 +251,27 @@ internal class Program
 
     static private void OpenItemSelector()
     {
-        List<ProcessItem> processes = _processEnumerator.GetVisibleWindowProcesses();
-        HashSet<int> alreadySelected = ProcessFilterService.GetSelectedProcessIds();
-
-        List<SelectableItem> items = processes.Select(p => new SelectableItem
+        if (!_processEnumerator.Capability.IsAvailable)
         {
-            Id = p.ProcessId,
-            Name = $"{p.ProcessName} \u2014 {p.WindowTitle}",
-            IsChecked = alreadySelected.Contains(p.ProcessId)
-        }).ToList();
+            SendProcessFilterCapability(_processEnumerator.Capability);
+            return;
+        }
 
-        string itemsJson = JsonSerializer.Serialize(items.Select(item => new
+        if (_selectorWindow is not null)
         {
-            id = item.Id,
-            name = item.Name,
-            isChecked = item.IsChecked
-        }));
+            _selectorWindow.SetMinimized(false);
+            return;
+        }
 
-        PhotinoWindow selectorWindow = new PhotinoWindow()
+        PhotinoWindow selectorWindow = new PhotinoWindow(_mainWindow)
             .SetTitle("Select Target Applications")
             .SetUseOsDefaultSize(false)
             .SetWidth(600)
             .SetHeight(800)
             .Center()
             .Load("wwwroot/itemselector.html");
+
+        int catalogRequested = 0;
 
         selectorWindow.RegisterWebMessageReceivedHandler((object? sender, string message) =>
         {
@@ -266,18 +281,16 @@ internal class Program
                 JsonElement root = doc.RootElement;
                 string type = root.GetProperty("type").GetString() ?? "";
 
-                if (type == "toggleItem")
+                if (type == "selectorReady")
                 {
-                    int id = root.GetProperty("id").GetInt32();
-                    bool isChecked = root.GetProperty("isChecked").GetBoolean();
+                    if (Interlocked.Exchange(ref catalogRequested, 1) == 0)
+                        _ = LoadProcessCatalogAsync(selectorWindow);
 
-                    if (isChecked)
-                        ProcessFilterService.AddProcess(id);
-                    else
-                        ProcessFilterService.RemoveProcess(id);
-
-                    Console.WriteLine($"Process {id} selected: {isChecked}");
+                    return;
                 }
+
+                if (type == "setProcessSelected")
+                    HandleProcessSelectionMessage(selectorWindow, root);
             }
             catch (Exception ex)
             {
@@ -285,13 +298,160 @@ internal class Program
             }
         });
 
-        Task.Run(async () =>
+        selectorWindow.RegisterWindowClosingHandler((object sender, EventArgs e) =>
         {
-            await Task.Delay(500);
-            selectorWindow.SendWebMessage($"{{\"type\":\"items\",\"items\":{itemsJson}}}");
+            if (ReferenceEquals(_selectorWindow, sender))
+                _selectorWindow = null;
+
+            return false;
         });
 
-        selectorWindow.WaitForClose();
+        _selectorWindow = selectorWindow;
+
+        try
+        {
+            selectorWindow.WaitForClose();
+        }
+        catch
+        {
+            if (ReferenceEquals(_selectorWindow, selectorWindow))
+                _selectorWindow = null;
+
+            throw;
+        }
+    }
+
+    private static async Task LoadProcessCatalogAsync(PhotinoWindow selectorWindow)
+    {
+        ProcessCatalogResult catalog;
+
+        try
+        {
+            catalog = await Task.Run(_processEnumerator.GetVisibleWindowProcesses);
+        }
+        catch (Exception ex)
+        {
+            catalog = new ProcessCatalogResult(
+                new ProcessFilterCapability(false, "enumeration-failed", $"Application enumeration failed: {ex.Message}"),
+                []);
+        }
+
+        if (_isShuttingDown)
+            return;
+
+        try
+        {
+            _mainWindow.Invoke(() =>
+            {
+                if (_isShuttingDown || !ReferenceEquals(_selectorWindow, selectorWindow))
+                    return;
+
+                HashSet<ProcessInstanceId> selected = ProcessFilterService.GetSelectedProcessInstances();
+                string payload = JsonSerializer.Serialize(new
+                {
+                    type = "processCatalog",
+                    capability = new
+                    {
+                        isAvailable = catalog.Capability.IsAvailable,
+                        code = catalog.Capability.Code,
+                        message = catalog.Capability.Message
+                    },
+                    items = catalog.Processes.Select(process => new
+                    {
+                        processId = process.InstanceId.ProcessId,
+                        startTimeUtcTicks = process.InstanceId.StartTimeUtcTicks.ToString(CultureInfo.InvariantCulture),
+                        name = $"{process.ProcessName} \u2014 {process.WindowTitle}",
+                        isChecked = selected.Contains(process.InstanceId)
+                    })
+                });
+
+                selectorWindow.SendWebMessage(payload);
+                SendProcessFilterCapability(_processEnumerator.Capability);
+            });
+        }
+        catch
+        {
+            if (!_isShuttingDown && ReferenceEquals(_selectorWindow, selectorWindow))
+                _selectorWindow = null;
+        }
+    }
+
+    private static void HandleProcessSelectionMessage(PhotinoWindow selectorWindow, JsonElement root)
+    {
+        if (!root.TryGetProperty("processId", out JsonElement processIdElement)
+            || !processIdElement.TryGetInt32(out int processId)
+            || processId <= 0
+            || !root.TryGetProperty("startTimeUtcTicks", out JsonElement ticksElement)
+            || !long.TryParse(ticksElement.GetString(), NumberStyles.None, CultureInfo.InvariantCulture, out long startTimeUtcTicks)
+            || startTimeUtcTicks <= 0
+            || !root.TryGetProperty("isSelected", out JsonElement selectedElement)
+            || selectedElement.ValueKind is not (JsonValueKind.True or JsonValueKind.False))
+        {
+            return;
+        }
+
+        bool isSelected = selectedElement.GetBoolean();
+        ProcessInstanceId instanceId = new(processId, startTimeUtcTicks);
+        bool accepted;
+
+        if (isSelected)
+        {
+            accepted = ProcessFilterService.TryAddProcess(instanceId);
+        }
+        else
+        {
+            ProcessFilterService.RemoveProcess(instanceId);
+            accepted = true;
+        }
+
+        selectorWindow.SendWebMessage(JsonSerializer.Serialize(new
+        {
+            type = "selectionChanged",
+            processId,
+            startTimeUtcTicks = startTimeUtcTicks.ToString(CultureInfo.InvariantCulture),
+            isSelected = accepted && isSelected,
+            accepted,
+            message = accepted ? string.Empty : "The application has exited. Refresh the selector to update the list."
+        }));
+    }
+
+    private static void OnSelectionExpired(ProcessInstanceId instanceId)
+    {
+        if (_isShuttingDown || _selectorWindow is not { } selectorWindow)
+            return;
+
+        string payload = JsonSerializer.Serialize(new
+        {
+            type = "selectionExpired",
+            processId = instanceId.ProcessId,
+            startTimeUtcTicks = instanceId.StartTimeUtcTicks.ToString(CultureInfo.InvariantCulture),
+            message = "The selected application exited. Application filtering was updated."
+        });
+
+        _ = SendSelectorMessageAsync(selectorWindow, payload);
+    }
+
+    private static async Task SendSelectorMessageAsync(PhotinoWindow selectorWindow, string payload)
+    {
+        try
+        {
+            if (!_isShuttingDown && ReferenceEquals(_selectorWindow, selectorWindow))
+                await selectorWindow.SendWebMessageAsync(payload);
+        }
+        catch
+        {
+        }
+    }
+
+    private static void SendProcessFilterCapability(ProcessFilterCapability capability)
+    {
+        _mainWindow?.SendWebMessage(JsonSerializer.Serialize(new
+        {
+            type = "processFilterCapability",
+            isAvailable = capability.IsAvailable,
+            code = capability.Code,
+            message = capability.Message
+        }));
     }
 
     static private IProcessEnumerator CreateProcessEnumerator()

@@ -2,6 +2,7 @@
 <html>
 
 <head>
+    <meta charset="utf-8">
     <link rel="stylesheet" href="assets/main.css">
     <link rel="stylesheet" href="assets/itemselector.css">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
@@ -9,11 +10,13 @@
 
 <body>
     <div class="item-selector-container">
-        <table class="item-grid">
+        <p id="selectorStatus" class="selector-status">Loading applications...</p>
+        <p class="selector-hint">No selection means application filtering is off.</p>
+        <table id="itemGrid" class="item-grid" hidden>
             <thead>
                 <tr>
-                    <th class="col-check">✓</th>
-                    <th class="col-name">Name</th>
+                    <th class="col-check">X</th>
+                    <th class="col-name">Application</th>
                 </tr>
             </thead>
             <tbody id="itemTableBody">
@@ -22,47 +25,131 @@
     </div>
 
     <script>
+        function itemKey(processId, startTimeUtcTicks) {
+            return `${processId}:${startTimeUtcTicks}`;
+        }
+
+        function findCheckbox(processId, startTimeUtcTicks) {
+            const key = itemKey(processId, startTimeUtcTicks);
+            const checkboxes = document.querySelectorAll("#itemTableBody input[type='checkbox']");
+
+            for (const checkbox of checkboxes) {
+                if (checkbox.dataset.key === key)
+                    return checkbox;
+            }
+
+            return null;
+        }
+
+        function setStatus(message, isError) {
+            const status = document.getElementById("selectorStatus");
+            status.textContent = message;
+            status.classList.toggle("error", Boolean(isError));
+        }
+
+        function renderCatalog(data) {
+            const tbody = document.getElementById("itemTableBody");
+            const grid = document.getElementById("itemGrid");
+            tbody.innerHTML = "";
+
+            if (!data.capability.isAvailable) {
+                grid.hidden = true;
+                setStatus(data.capability.message, true);
+                return;
+            }
+
+            if (data.items.length === 0) {
+                grid.hidden = true;
+                setStatus("No running applications with visible windows were found.", false);
+                return;
+            }
+
+            grid.hidden = false;
+            setStatus("Select the applications where clicking is allowed.", false);
+
+            for (const item of data.items) {
+                const tr = document.createElement("tr");
+
+                const tdCheck = document.createElement("td");
+                tdCheck.className = "col-check";
+                const cb = document.createElement("input");
+                cb.type = "checkbox";
+                cb.checked = item.isChecked;
+                cb.dataset.key = itemKey(item.processId, item.startTimeUtcTicks);
+                cb.addEventListener("change", function () {
+                    cb.disabled = true;
+                    window.external.sendMessage(JSON.stringify({
+                        type: "setProcessSelected",
+                        processId: item.processId,
+                        startTimeUtcTicks: item.startTimeUtcTicks,
+                        isSelected: cb.checked
+                    }));
+                });
+                tdCheck.appendChild(cb);
+                tr.appendChild(tdCheck);
+
+                const tdName = document.createElement("td");
+                tdName.className = "col-name";
+                tdName.textContent = item.name;
+                tr.appendChild(tdName);
+
+                tbody.appendChild(tr);
+            }
+        }
+
         window.external.receiveMessage((message) => {
             try {
                 const data = JSON.parse(message);
 
-                if (data.type === "items") {
-                    const tbody = document.getElementById("itemTableBody");
-                    tbody.innerHTML = "";
+                if (data.type === "processCatalog") {
+                    renderCatalog(data);
+                    return;
+                }
 
-                    for (let i = 0; i < data.items.length; i++) {
-                        const item = data.items[i];
-                        const tr = document.createElement("tr");
+                if (data.type === "selectionChanged") {
+                    const cb = findCheckbox(data.processId, data.startTimeUtcTicks);
+                    if (cb === null)
+                        return;
 
-                        const tdCheck = document.createElement("td");
-                        tdCheck.className = "col-check";
-                        const cb = document.createElement("input");
-                        cb.type = "checkbox";
-                        cb.checked = item.isChecked;
-                        cb.dataset.id = item.id;
-                        cb.addEventListener("change", function () {
-                            window.external.sendMessage(JSON.stringify({
-                                type: "toggleItem",
-                                id: item.id,
-                                isChecked: cb.checked
-                            }));
-                        });
-                        tdCheck.appendChild(cb);
-                        tr.appendChild(tdCheck);
-
-                        const tdName = document.createElement("td");
-                        tdName.className = "col-name";
-                        tdName.textContent = item.name;
-                        tr.appendChild(tdName);
-
-                        tbody.appendChild(tr);
+                    const row = cb.closest("tr");
+                    if (row.classList.contains("expired")) {
+                        cb.checked = false;
+                        cb.disabled = true;
+                        return;
                     }
+
+                    cb.checked = data.isSelected;
+                    cb.disabled = false;
+
+                    if (!data.accepted) {
+                        row.classList.add("expired");
+                        cb.disabled = true;
+                        setStatus(data.message, true);
+                    }
+
+                    return;
+                }
+
+                if (data.type === "selectionExpired") {
+                    const cb = findCheckbox(data.processId, data.startTimeUtcTicks);
+                    if (cb !== null) {
+                        cb.checked = false;
+                        cb.disabled = true;
+                        cb.closest("tr").classList.add("expired");
+                    }
+
+                    setStatus(data.message, false);
+                    return;
                 }
             } catch (ex) {
+                setStatus("The selector could not process an application update.", true);
                 console.log("Error:", ex);
             }
         });
+
+        document.addEventListener("DOMContentLoaded", function () {
+            window.external.sendMessage(JSON.stringify({ type: "selectorReady" }));
+        });
     </script>
 </body>
-
 </html>

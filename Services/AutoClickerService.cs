@@ -6,7 +6,11 @@ namespace OpenClicker.Services;
 
 internal static class AutoClickerService
 {
+    private static readonly object SyncRoot = new();
+    private static readonly SemaphoreSlim ClickLoopGate = new(1, 1);
     private static volatile bool _autoClickEnabled = false;
+    private static Task? _clickLoopTask;
+    private static int _loopGeneration;
     private static int _cps = 10;
     private static int _dutyPercent = 50;
     private static MouseButton _mouse_button = MouseButton.Button1;
@@ -36,15 +40,58 @@ internal static class AutoClickerService
 
     public static Task Start(PhotinoWindow window)
     {
-        if (_autoClickEnabled)
-            return Task.CompletedTask;
+        lock (SyncRoot)
+        {
+            if (_autoClickEnabled)
+                return Task.CompletedTask;
 
-        _autoClickEnabled = true;
+            _autoClickEnabled = true;
+            int generation = ++_loopGeneration;
+            _clickLoopTask = Task.Run(() => RunClickLoop(generation));
+        }
+
         window.SendWebMessage("{\"type\":\"status\",\"state\":1}");
 
-        _ = Task.Run(async () =>
+        return Task.CompletedTask;
+    }
+
+    public static Task Stop(PhotinoWindow window)
+    {
+        lock (SyncRoot)
         {
-            while (_autoClickEnabled)
+            _autoClickEnabled = false;
+            _loopGeneration++;
+        }
+
+        window.SendWebMessage("{\"type\":\"status\",\"state\":0}");
+        return Task.CompletedTask;
+    }
+
+    public static async Task ShutdownAsync()
+    {
+        Task? clickLoopTask;
+
+        lock (SyncRoot)
+        {
+            _autoClickEnabled = false;
+            _loopGeneration++;
+            clickLoopTask = _clickLoopTask;
+        }
+
+        if (clickLoopTask is not null)
+            await clickLoopTask;
+
+        lock (SyncRoot)
+            _clickLoopTask = null;
+    }
+
+    private static async Task RunClickLoop(int generation)
+    {
+        await ClickLoopGate.WaitAsync();
+
+        try
+        {
+            while (_autoClickEnabled && Volatile.Read(ref _loopGeneration) == generation)
             {
                 if (!ProcessFilterService.IsClickAllowed())
                 {
@@ -54,32 +101,20 @@ internal static class AutoClickerService
 
                 int cps = Math.Max(1, _cps);
                 double periodMs = 1000.0 / cps;
-
                 double duty = Math.Clamp(_dutyPercent, 0, 100) / 100.0;
                 int downMs = (int)Math.Round(periodMs * duty);
                 int upMs = (int)Math.Round(periodMs - downMs);
+                MouseButton button = _mouse_button;
 
-                await MouseClicker.Down(_mouse_button);
+                await MouseClicker.Down(button);
                 await Task.Delay(Math.Max(0, downMs));
-
-                await MouseClicker.Up(_mouse_button);
+                await MouseClicker.Up(button);
                 await Task.Delay(Math.Max(0, upMs));
             }
-        });
-
-        return Task.CompletedTask;
-    }
-
-    public static Task Stop(PhotinoWindow window)
-    {
-        if (!_autoClickEnabled)
-        {
-            window.SendWebMessage("{\"type\":\"status\",\"state\":0}");
-            return Task.CompletedTask;
         }
-
-        _autoClickEnabled = false;
-        window.SendWebMessage("{\"type\":\"status\",\"state\":0}");
-        return Task.CompletedTask;
+        finally
+        {
+            ClickLoopGate.Release();
+        }
     }
 }

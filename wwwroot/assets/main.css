@@ -23,6 +23,18 @@ button {
     text-align: center;
 }
 
+button:disabled {
+    cursor: not-allowed;
+    opacity: 0.55;
+}
+
+.process-filter-warning {
+    margin: 8px 12px 0;
+    color: #ffb86c;
+    font-size: 12px;
+    line-height: 1.35;
+}
+
 input[type="button"] {
     text-align: center;
 }

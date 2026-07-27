@@ -1,12 +1,15 @@
+using System.ComponentModel;
 using System.Diagnostics;
+using System.Globalization;
 using OpenClicker.Abstractions;
 using OpenClicker.Models;
+using OpenClicker.Services;
 
 namespace OpenClicker.Platform.Linux;
 
-internal class LinuxX11ProcessEnumerator : IProcessEnumerator
+internal sealed class LinuxX11ProcessEnumerator : IProcessEnumerator
 {
-    //Note: we need this because there is no reliable way to distinguish user-relevant processes from system/background processes
+    // There is no reliable cross-desktop distinction between user applications and desktop services.
     private static readonly HashSet<string> ExcludedProcessNames = new(StringComparer.Ordinal)
     {
         "gnome-shell", "plasmashell", "kwin_x11", "kwin_wayland",
@@ -34,89 +37,199 @@ internal class LinuxX11ProcessEnumerator : IProcessEnumerator
         "xfconfd", "xfsettingsd",
     };
 
-    private readonly bool _wmctrlAvailable;
-    private readonly bool _xdotoolAvailable;
+    private static readonly ProcessFilterCapability AvailableCapability = new(
+        true,
+        "available",
+        "Process filtering is available.");
+
+    private readonly X11ForegroundProcessReader? _foregroundReader;
+    private readonly bool _enumerationEnabled;
+    private X11ForegroundWindow? _lastForegroundWindow;
+    private ProcessInstanceId? _lastForegroundProcess;
+    private long _lastForegroundValidation;
 
     public LinuxX11ProcessEnumerator()
     {
-        _wmctrlAvailable = IsCommandAvailable("wmctrl");
-        _xdotoolAvailable = IsCommandAvailable("xdotool");
+        if (IsNativeWayland(
+                Environment.GetEnvironmentVariable("XDG_SESSION_TYPE"),
+                Environment.GetEnvironmentVariable("WAYLAND_DISPLAY")))
+        {
+            Capability = Unavailable(
+                "x11-unavailable",
+                "Process filtering is unavailable in a native Wayland session.");
+            return;
+        }
 
-        if (!_wmctrlAvailable)
-            Console.WriteLine("Warning: wmctrl not found. Install with: sudo apt install wmctrl");
-        if (!_xdotoolAvailable)
-            Console.WriteLine("Warning: xdotool not found. Install with: sudo apt install xdotool");
+        if (string.IsNullOrWhiteSpace(Environment.GetEnvironmentVariable("DISPLAY")))
+        {
+            Capability = Unavailable(
+                "x11-unavailable",
+                "Process filtering requires an X11 DISPLAY.");
+            return;
+        }
+
+        if (!X11ForegroundProcessReader.TryCreate(out _foregroundReader, out string failureCode))
+        {
+            Capability = failureCode == "ewmh-unavailable"
+                ? Unavailable(failureCode, "The X11 window manager does not provide the required EWMH properties.")
+                : Unavailable("x11-unavailable", "The X11 display could not be opened.");
+            return;
+        }
+
+        if (!IsCommandAvailable("wmctrl"))
+        {
+            Capability = Unavailable(
+                "missing-wmctrl",
+                "Process filtering requires wmctrl to enumerate application windows.");
+            return;
+        }
+
+        Capability = AvailableCapability;
+        _enumerationEnabled = true;
     }
 
-    public List<ProcessItem> GetVisibleWindowProcesses()
-    {
-        if (!_wmctrlAvailable)
-            return [];
+    public ProcessFilterCapability Capability { get; private set; }
 
-        string? output = RunCommand("wmctrl", "-l -p");
-        if (output is null)
-            return [];
+    public ProcessCatalogResult GetVisibleWindowProcesses()
+    {
+        if (!_enumerationEnabled)
+            return new ProcessCatalogResult(Capability, []);
+
+        CommandResult command = RunWmctrl();
+        if (command.Status != CommandStatus.Success)
+        {
+            ProcessFilterCapability failure = command.Status == CommandStatus.Missing
+                ? Unavailable("missing-wmctrl", "Process filtering requires wmctrl to enumerate application windows.")
+                : Unavailable("enumeration-failed", BuildEnumerationFailureMessage(command.Error));
+
+            return new ProcessCatalogResult(failure, []);
+        }
 
         Dictionary<int, ProcessItem> processes = new();
 
-        foreach (string line in output.Split('\n', StringSplitOptions.RemoveEmptyEntries))
+        foreach (string line in command.Output.Split('\n', StringSplitOptions.RemoveEmptyEntries))
         {
-            // wmctrl -l -p format: 0x04000003  0 12345 hostname Window Title
-            string[] parts = line.Split(' ', StringSplitOptions.RemoveEmptyEntries);
-            if (parts.Length < 5)
+            if (!TryParseWmctrlLine(line, out int pid, out string windowTitle)
+                || pid == Environment.ProcessId
+                || processes.ContainsKey(pid))
+            {
                 continue;
+            }
 
-            if (!int.TryParse(parts[2], out int pid) || pid <= 0)
-                continue;
-
-            if (processes.ContainsKey(pid))
-                continue;
-
-            string windowTitle = string.Join(' ', parts.Skip(4));
-            if (string.IsNullOrWhiteSpace(windowTitle))
+            ProcessInstanceId? instanceId = ProcessInstanceResolver.TryResolve(pid);
+            if (instanceId is not { } resolvedInstanceId)
                 continue;
 
             string? processName = GetProcessName(pid);
-            if (processName is null)
+            if (processName is null || ExcludedProcessNames.Contains(processName))
                 continue;
 
-            if (ExcludedProcessNames.Contains(processName))
-                continue;
-
-            string displayName = GetWindowClass(parts[0]) ?? processName;
-
-            processes[pid] = new ProcessItem
+            processes.Add(pid, new ProcessItem
             {
-                ProcessId = pid,
-                ProcessName = displayName,
+                InstanceId = resolvedInstanceId,
+                ProcessName = processName,
                 WindowTitle = windowTitle
-            };
+            });
         }
 
-        return processes.Values.OrderBy(p => p.ProcessName).ThenBy(p => p.WindowTitle).ToList();
+        List<ProcessItem> orderedProcesses = processes.Values
+            .OrderBy(process => process.ProcessName)
+            .ThenBy(process => process.WindowTitle)
+            .ToList();
+
+        return new ProcessCatalogResult(Capability, orderedProcesses);
     }
 
-    public int? GetWindowProcessId()
+    public ProcessInstanceId? GetForegroundProcess()
     {
-        if (!_xdotoolAvailable)
+        X11ForegroundWindow? foregroundWindow = _foregroundReader?.GetForegroundWindow();
+        if (foregroundWindow is null)
             return null;
 
-        string? output = RunCommand("xdotool", "getactivewindow getwindowpid");
-        if (output is null)
-            return null;
+        long now = Environment.TickCount64;
+        if (foregroundWindow == _lastForegroundWindow && now - _lastForegroundValidation < 250)
+            return _lastForegroundProcess;
 
-        if (int.TryParse(output.Trim(), out int pid) && pid > 0)
-            return pid;
+        ProcessInstanceId? foregroundProcess = ProcessInstanceResolver.TryResolve(foregroundWindow.Value.ProcessId);
+        _lastForegroundWindow = foregroundWindow;
+        _lastForegroundProcess = foregroundProcess;
+        _lastForegroundValidation = now;
+        return foregroundProcess;
+    }
 
-        return null;
+    public void Dispose() => _foregroundReader?.Dispose();
+
+    private static bool IsNativeWayland(string? sessionType, string? waylandDisplay)
+    {
+        string? normalizedSessionType = sessionType?.Trim();
+
+        if (string.Equals(normalizedSessionType, "wayland", StringComparison.OrdinalIgnoreCase))
+            return true;
+
+        if (string.Equals(normalizedSessionType, "x11", StringComparison.OrdinalIgnoreCase))
+            return false;
+
+        return !string.IsNullOrWhiteSpace(waylandDisplay);
+    }
+
+    private static bool TryParseWmctrlLine(string line, out int pid, out string windowTitle)
+    {
+        pid = 0;
+        windowTitle = string.Empty;
+
+        int position = 0;
+        string? processIdText = null;
+
+        for (int field = 0; field < 4; field++)
+        {
+            while (position < line.Length && char.IsWhiteSpace(line[position]))
+                position++;
+
+            int start = position;
+            while (position < line.Length && !char.IsWhiteSpace(line[position]))
+                position++;
+
+            if (start == position)
+                return false;
+
+            if (field == 2)
+                processIdText = line[start..position];
+        }
+
+        while (position < line.Length && char.IsWhiteSpace(line[position]))
+            position++;
+
+        if (position == line.Length
+            || !int.TryParse(processIdText, NumberStyles.None, CultureInfo.InvariantCulture, out pid)
+            || pid <= 0)
+        {
+            return false;
+        }
+
+        windowTitle = line[position..].TrimEnd('\r');
+        return !string.IsNullOrWhiteSpace(windowTitle);
+    }
+
+    private static ProcessFilterCapability Unavailable(string code, string message) => new(false, code, message);
+
+    private static string BuildEnumerationFailureMessage(string error)
+    {
+        const string prefix = "wmctrl could not enumerate X11 windows.";
+        if (string.IsNullOrWhiteSpace(error))
+            return prefix;
+
+        string singleLineError = error.Replace('\r', ' ').Replace('\n', ' ').Trim();
+        if (singleLineError.Length > 240)
+            singleLineError = singleLineError[..240];
+
+        return $"{prefix} {singleLineError}";
     }
 
     private static string? GetProcessName(int pid)
     {
         try
         {
-            string exeLink = $"/proc/{pid}/exe";
-            FileSystemInfo? target = File.ResolveLinkTarget(exeLink, returnFinalTarget: true);
+            FileSystemInfo? target = File.ResolveLinkTarget($"/proc/{pid}/exe", returnFinalTarget: true);
             if (target is not null)
                 return Path.GetFileName(target.FullName);
         }
@@ -137,69 +250,113 @@ internal class LinuxX11ProcessEnumerator : IProcessEnumerator
         return null;
     }
 
-    private static string? GetWindowClass(string windowId)
-    {
-        string? output = RunCommand("xprop", $"-id {windowId} WM_CLASS");
-        if (output is null)
-            return null;
-
-        // xprop output: WM_CLASS(STRING) = "instance", "ClassName"
-        int eqIndex = output.IndexOf('=');
-        if (eqIndex < 0)
-            return null;
-
-        string[] values = output[(eqIndex + 1)..].Split(',');
-
-        if (values.Length >= 2)
-        {
-            string className = values[1].Trim().Trim('"');
-            if (!string.IsNullOrWhiteSpace(className))
-                return className;
-        }
-
-        if (values.Length >= 1)
-        {
-            string instanceName = values[0].Trim().Trim('"');
-            if (!string.IsNullOrWhiteSpace(instanceName))
-                return instanceName;
-        }
-
-        return null;
-    }
-
     private static bool IsCommandAvailable(string command)
     {
-        string? result = RunCommand("which", command);
-        return result is not null && !string.IsNullOrWhiteSpace(result);
+        string? path = Environment.GetEnvironmentVariable("PATH");
+        if (string.IsNullOrWhiteSpace(path))
+            return false;
+
+        foreach (string directory in path.Split(Path.PathSeparator, StringSplitOptions.RemoveEmptyEntries))
+        {
+            try
+            {
+                string candidate = Path.Combine(directory.Trim().Trim('"'), command);
+                if (File.Exists(candidate) && IsExecutable(candidate))
+                    return true;
+            }
+            catch
+            {
+            }
+        }
+
+        return false;
     }
 
-    private static string? RunCommand(string command, string arguments)
+    private static bool IsExecutable(string path)
     {
+        UnixFileMode executableBits = UnixFileMode.UserExecute
+            | UnixFileMode.GroupExecute
+            | UnixFileMode.OtherExecute;
+
+        return OperatingSystem.IsLinux()
+            && (File.GetUnixFileMode(path) & executableBits) != 0;
+    }
+
+    private static CommandResult RunWmctrl()
+    {
+        using Process process = new();
+        process.StartInfo = new ProcessStartInfo
+        {
+            FileName = "wmctrl",
+            RedirectStandardOutput = true,
+            RedirectStandardError = true,
+            UseShellExecute = false,
+            CreateNoWindow = true
+        };
+        process.StartInfo.ArgumentList.Add("-l");
+        process.StartInfo.ArgumentList.Add("-p");
+
         try
         {
-            using Process process = new();
-            process.StartInfo = new ProcessStartInfo
-            {
-                FileName = command,
-                Arguments = arguments,
-                RedirectStandardOutput = true,
-                RedirectStandardError = true,
-                UseShellExecute = false,
-                CreateNoWindow = true
-            };
-
             process.Start();
-            string output = process.StandardOutput.ReadToEnd();
-            process.WaitForExit(3000);
-
-            if (process.ExitCode != 0)
-                return null;
-
-            return output;
         }
-        catch
+        catch (Win32Exception exception) when (exception.NativeErrorCode == 2)
         {
-            return null;
+            return new CommandResult(CommandStatus.Missing, string.Empty, exception.Message);
+        }
+        catch (Exception exception)
+        {
+            return new CommandResult(CommandStatus.Failed, string.Empty, exception.Message);
+        }
+
+        try
+        {
+            Task<string> standardOutput = process.StandardOutput.ReadToEndAsync();
+            Task<string> standardError = process.StandardError.ReadToEndAsync();
+
+            if (!process.WaitForExit(3000))
+            {
+                try
+                {
+                    process.Kill(entireProcessTree: true);
+                }
+                catch
+                {
+                    try
+                    {
+                        process.Kill();
+                    }
+                    catch
+                    {
+                    }
+                }
+
+                process.WaitForExit(1000);
+                return new CommandResult(CommandStatus.Failed, string.Empty, "wmctrl timed out after 3 seconds.");
+            }
+
+            if (!Task.WhenAll(standardOutput, standardError).Wait(1000))
+                return new CommandResult(CommandStatus.Failed, string.Empty, "wmctrl output could not be read.");
+
+            string output = standardOutput.GetAwaiter().GetResult();
+            string error = standardError.GetAwaiter().GetResult();
+
+            return process.ExitCode == 0
+                ? new CommandResult(CommandStatus.Success, output, error)
+                : new CommandResult(CommandStatus.Failed, output, error);
+        }
+        catch (Exception exception)
+        {
+            return new CommandResult(CommandStatus.Failed, string.Empty, exception.Message);
         }
     }
+
+    private enum CommandStatus
+    {
+        Success,
+        Missing,
+        Failed
+    }
+
+    private readonly record struct CommandResult(CommandStatus Status, string Output, string Error);
 }

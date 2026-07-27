@@ -15,7 +15,7 @@ function setMouseButton(value) {
 function setKeybind() {
     const btn = document.getElementById('btnSetHotkey');
     btn.disabled = true;
-    btn.innerText = "Drücke eine Tastenkombination..."
+    btn.innerText = "Drï¿½cke eine Tastenkombination..."
     window.external.sendMessage("setKeybind");
 }
 
@@ -27,6 +27,10 @@ function setHoldMode() {
 function openItemSelector() {
     window.external.sendMessage("openItemSelector");
 }
+
+document.addEventListener("DOMContentLoaded", function () {
+    window.external.sendMessage("mainReady");
+});
 
 window.external.receiveMessage((message) => {
     try {
@@ -41,6 +45,16 @@ window.external.receiveMessage((message) => {
         if (data.type === "status") {
             document.getElementById("status").style.backgroundColor =
                 data.state === 1 ? "#0F0" : "#F00";
+            return;
+        }
+
+        if (data.type === "processFilterCapability") {
+            const button = document.getElementById("btnOpenItemSelector");
+            const warning = document.getElementById("processFilterWarning");
+
+            button.disabled = !data.isAvailable;
+            warning.hidden = data.isAvailable;
+            warning.textContent = data.isAvailable ? "" : data.message;
             return;
         }
 

@@ -36,6 +36,12 @@ project.lock.json
 project.fragment.lock.json
 artifacts/
 
+# Local unit tests
+**/*[Tt]est/
+**/*[Tt]ests/
+**/*[Tt]est.cs
+**/*[Tt]ests.cs
+
 # VS Launch Settings
 launchSettings.json
 

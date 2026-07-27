@@ -2,8 +2,9 @@ using OpenClicker.Models;
 
 namespace OpenClicker.Abstractions;
 
-internal interface IProcessEnumerator
+internal interface IProcessEnumerator : IDisposable
 {
-    List<ProcessItem> GetVisibleWindowProcesses();
-    int? GetWindowProcessId();
+    ProcessFilterCapability Capability { get; }
+    ProcessCatalogResult GetVisibleWindowProcesses();
+    ProcessInstanceId? GetForegroundProcess();
 }
