@@ -6,12 +6,15 @@
 		<Platforms>AnyCPU</Platforms>
 		<ImplicitUsings>enable</ImplicitUsings>
 		<Nullable>enable</Nullable>
+		<ApplicationIcon Condition="$([MSBuild]::IsOSPlatform('Windows'))">wwwroot\assets\icon.ico</ApplicationIcon>
 	</PropertyGroup>
 
 	<ItemGroup>
 		<Compile Remove="wwwroot\**" />
 		<None Update="wwwroot\**">
 			<CopyToOutputDirectory>Always</CopyToOutputDirectory>
+			<CopyToPublishDirectory>Always</CopyToPublishDirectory>
+			<ExcludeFromSingleFile>true</ExcludeFromSingleFile>
 		</None>
 	</ItemGroup>
 

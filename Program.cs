@@ -23,6 +23,11 @@ internal class Program
     private static IProcessEnumerator _processEnumerator = null!;
     private static PhotinoWindow? _selectorWindow;
     private static volatile bool _isShuttingDown;
+    private static readonly string _iconPath = Path.Combine(
+        AppContext.BaseDirectory,
+        "wwwroot",
+        "assets",
+        OperatingSystem.IsWindows() ? "icon.ico" : "icon.png");
 
     [STAThread]
     static void Main(string[] args)
@@ -55,6 +60,8 @@ internal class Program
         _mainWindow =
             new PhotinoWindow()
                 .SetTitle("Open Clicker")
+                .SetIconFile(_iconPath)
+                .SetNotificationsEnabled(false)
                 .RegisterWebMessageReceivedHandler(RouteMessageDelegate!)
                 .SetUseOsDefaultSize(false)
                  .SetResizable(false)
@@ -265,6 +272,8 @@ internal class Program
 
         PhotinoWindow selectorWindow = new PhotinoWindow(_mainWindow)
             .SetTitle("Select Target Applications")
+            .SetIconFile(_iconPath)
+            .SetNotificationsEnabled(false)
             .SetUseOsDefaultSize(false)
             .SetWidth(600)
             .SetHeight(800)
