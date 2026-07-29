@@ -101,6 +101,12 @@ window.external.receiveMessage((message) => {
             applyTranslations();
             return;
         }
+
+        if (data.type === "version") {
+            const el = document.getElementById("appVersion");
+            if (el) el.textContent = data.text;
+            return;
+        }
     } catch (ex) {
         console.log("Error:", ex);
     }

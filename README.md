@@ -16,6 +16,10 @@ OpenClicker is a lightweight auto clicker for Windows and Linux, built with **.N
 - Windows: WebView2 Runtime
 - Linux: X11, GTK 3, and WebKit2GTK
 
+## Versioning
+
+OpenClicker uses semantic versioning (`MAJOR.MINOR.PATCH`). The current version is defined once in `OpenClicker.csproj` and displayed in the application. Increase that value before creating a new release and use the matching Git tag, for example `v1.0.0`.
+
 ## Build
 
 ```bash

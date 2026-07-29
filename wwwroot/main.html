@@ -81,10 +81,13 @@
 
         <!-- Hold / Toggle mode & Language Button -->
         <div class="d-flex mt-6 hold-lang-row" style="align-items:center; justify-content: space-between;">
-            <label style="display:inline-flex;align-items:center;gap:8px;">
-                <input id="holdModeCheckbox" type="checkbox" onchange="setHoldMode()">
-                <span data-i18n="holdModeLabel">Hold to activate (off = toggle)</span>
-            </label>
+            <div class="hold-mode-group">
+                <label style="display:inline-flex;align-items:center;gap:8px;">
+                    <input id="holdModeCheckbox" type="checkbox" onchange="setHoldMode()">
+                    <span data-i18n="holdModeLabel">Hold to activate (off = toggle)</span>
+                </label>
+                <span id="appVersion" class="app-version"></span>
+            </div>
 
             <button id="btnLang"
                     class="rounded lang-btn"

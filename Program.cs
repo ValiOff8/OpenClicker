@@ -1,4 +1,5 @@
 ﻿using System.Globalization;
+using System.Reflection;
 using System.Text.Json;
 using OpenClicker.Abstractions;
 using OpenClicker.Models;
@@ -23,6 +24,7 @@ internal class Program
     private static IProcessEnumerator _processEnumerator = null!;
     private static PhotinoWindow? _selectorWindow;
     private static volatile bool _isShuttingDown;
+    private static readonly string _applicationVersion = GetApplicationVersion();
     private static readonly string _webRootPath = Path.Combine(
         AppContext.BaseDirectory,
         "wwwroot");
@@ -99,6 +101,11 @@ internal class Program
         _mainWindow?.SendWebMessage($"{{\"type\":\"mouseButton\",\"value\":{_settings.MouseButton}}}");
         _mainWindow?.SendWebMessage($"{{\"type\":\"holdMode\",\"enabled\":{(_settings.HoldMode ? "true" : "false")}}}");
         _mainWindow?.SendWebMessage($"{{\"type\":\"language\",\"lang\":\"{_settings.Language}\"}}");
+        _mainWindow?.SendWebMessage(JsonSerializer.Serialize(new
+        {
+            type = "version",
+            text = $"v{_applicationVersion}"
+        }));
         SendProcessFilterCapability(_processEnumerator.Capability);
         
         if (_currentHotkey.HasValue)
@@ -471,6 +478,24 @@ internal class Program
 
     private static bool IsGerman() =>
         string.Equals(_settings.Language, "de", StringComparison.OrdinalIgnoreCase);
+
+    private static string GetApplicationVersion()
+    {
+        Assembly assembly = typeof(Program).Assembly;
+        string? informationalVersion = assembly
+            .GetCustomAttribute<AssemblyInformationalVersionAttribute>()?
+            .InformationalVersion;
+
+        if (!string.IsNullOrWhiteSpace(informationalVersion))
+        {
+            int metadataIndex = informationalVersion.IndexOf('+');
+            return metadataIndex >= 0
+                ? informationalVersion[..metadataIndex]
+                : informationalVersion;
+        }
+
+        return assembly.GetName().Version?.ToString(3) ?? "unknown";
+    }
 
     private static string LocalizeProcessFilterCapabilityMessage(ProcessFilterCapability capability)
     {
