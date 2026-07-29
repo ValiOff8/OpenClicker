@@ -6,7 +6,17 @@ namespace OpenClicker.Services;
 
 internal static class SettingsService
 {
-    private static readonly string _settingsPath = Path.Combine("Temp", "settings.json");
+    private static readonly string _settingsPath = Path.Combine(
+        GetExecutableDirectory(),
+        "settings.json");
+
+    private static string GetExecutableDirectory()
+    {
+        string? processPath = Environment.ProcessPath;
+        return processPath is null
+            ? AppContext.BaseDirectory
+            : Path.GetDirectoryName(processPath) ?? AppContext.BaseDirectory;
+    }
 
     public static Settings LoadSettings()
     {

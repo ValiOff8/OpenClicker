@@ -23,9 +23,11 @@ internal class Program
     private static IProcessEnumerator _processEnumerator = null!;
     private static PhotinoWindow? _selectorWindow;
     private static volatile bool _isShuttingDown;
-    private static readonly string _iconPath = Path.Combine(
+    private static readonly string _webRootPath = Path.Combine(
         AppContext.BaseDirectory,
-        "wwwroot",
+        "wwwroot");
+    private static readonly string _iconPath = Path.Combine(
+        _webRootPath,
         "assets",
         OperatingSystem.IsWindows() ? "icon.ico" : "icon.png");
 
@@ -73,7 +75,7 @@ internal class Program
                      _isShuttingDown = true;
                      return false;
                  })
-                 .Load("wwwroot/main.html");
+                 .Load(Path.Combine(_webRootPath, "main.html"));
 
         try
         {
@@ -278,7 +280,7 @@ internal class Program
             .SetWidth(600)
             .SetHeight(800)
             .Center()
-            .Load("wwwroot/itemselector.html");
+            .Load(Path.Combine(_webRootPath, "itemselector.html"));
 
         int catalogRequested = 0;
 

@@ -27,19 +27,23 @@ dotnet build -c Release
 ### Windows x64
 
 ```bash
-dotnet publish -c Release -r win-x64 -f net10.0 --self-contained true -p:PublishSingleFile=true -p:IncludeNativeLibrariesForSelfExtract=true
+dotnet publish OpenClicker.csproj -c Release -f net10.0 -r win-x64 --self-contained true -p:PublishSingleFile=true -p:IncludeNativeLibrariesForSelfExtract=true -p:IncludeAllContentForSelfExtract=true -p:DebugType=embedded
 ```
 
 ### Linux x64
 
 ```bash
-dotnet publish -c Release -r linux-x64 -f net10.0 --self-contained true -p:PublishSingleFile=true -p:IncludeNativeLibrariesForSelfExtract=true
+dotnet publish OpenClicker.csproj -c Release -f net10.0 -r linux-x64 --self-contained true -p:PublishSingleFile=true -p:IncludeNativeLibrariesForSelfExtract=true -p:IncludeAllContentForSelfExtract=true -p:DebugType=embedded
 ```
 
 Published files are located in:
 
 - `bin/Release/net10.0/win-x64/publish/`
 - `bin/Release/net10.0/linux-x64/publish/`
+
+Each publish directory contains one executable. The bundled native libraries and web assets are extracted automatically when the application starts. On Windows, extraction uses `%TEMP%/.net`; on Linux, it uses `$HOME/.net`.
+
+User settings are created as `settings.json` next to the executable after the first setting is changed. The executable directory must therefore be writable. The settings file is intentionally not bundled because it is modified at runtime.
 
 ## License
 

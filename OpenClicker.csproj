@@ -14,7 +14,7 @@
 		<None Update="wwwroot\**">
 			<CopyToOutputDirectory>Always</CopyToOutputDirectory>
 			<CopyToPublishDirectory>Always</CopyToPublishDirectory>
-			<ExcludeFromSingleFile>true</ExcludeFromSingleFile>
+			<ExcludeFromSingleFile>false</ExcludeFromSingleFile>
 		</None>
 	</ItemGroup>
 
