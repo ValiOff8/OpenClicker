@@ -11,13 +11,13 @@
 
 <body>
     <div class="item-selector-container">
-        <p id="selectorStatus" class="selector-status">Loading applications...</p>
-        <p class="selector-hint">No selection means application filtering is off.</p>
+        <p id="selectorStatus" class="selector-status" data-i18n="selectorLoading">Loading applications...</p>
+        <p class="selector-hint" data-i18n="selectorHint">No selection means application filtering is off.</p>
         <table id="itemGrid" class="item-grid" hidden>
             <thead>
                 <tr>
                     <th class="col-check">X</th>
-                    <th class="col-name">Application</th>
+                    <th class="col-name" data-i18n="selectorApplication">Application</th>
                 </tr>
             </thead>
             <tbody id="itemTableBody">
@@ -25,6 +25,7 @@
         </table>
     </div>
 
+    <script src="assets/i18n.js"></script>
     <script>
         function itemKey(processId, startTimeUtcTicks) {
             return `${processId}:${startTimeUtcTicks}`;
@@ -44,7 +45,15 @@
 
         function setStatus(message, isError) {
             const status = document.getElementById("selectorStatus");
+            status.removeAttribute("data-i18n");
             status.textContent = message;
+            status.classList.toggle("error", Boolean(isError));
+        }
+
+        function setTranslatedStatus(key, isError) {
+            const status = document.getElementById("selectorStatus");
+            status.setAttribute("data-i18n", key);
+            status.textContent = translate(key);
             status.classList.toggle("error", Boolean(isError));
         }
 
@@ -61,12 +70,12 @@
 
             if (data.items.length === 0) {
                 grid.hidden = true;
-                setStatus("No running applications with visible windows were found.", false);
+                setTranslatedStatus("selectorEmpty", false);
                 return;
             }
 
             grid.hidden = false;
-            setStatus("Select the applications where clicking is allowed.", false);
+            setTranslatedStatus("selectorPrompt", false);
 
             for (const item of data.items) {
                 const tr = document.createElement("tr");
@@ -107,6 +116,12 @@
                     return;
                 }
 
+                if (data.type === "language") {
+                    currentLang = data.lang || "en";
+                    applyTranslations();
+                    return;
+                }
+
                 if (data.type === "selectionChanged") {
                     const cb = findCheckbox(data.processId, data.startTimeUtcTicks);
                     if (cb === null)
@@ -125,7 +140,7 @@
                     if (!data.accepted) {
                         row.classList.add("expired");
                         cb.disabled = true;
-                        setStatus(data.message, true);
+                        setTranslatedStatus("selectorApplicationExited", true);
                     }
 
                     return;
@@ -139,11 +154,11 @@
                         cb.closest("tr").classList.add("expired");
                     }
 
-                    setStatus(data.message, false);
+                    setTranslatedStatus("selectorSelectionExpired", false);
                     return;
                 }
             } catch (ex) {
-                setStatus("The selector could not process an application update.", true);
+                setTranslatedStatus("selectorUpdateFailed", true);
                 console.log("Error:", ex);
             }
         });

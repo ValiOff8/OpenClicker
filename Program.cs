@@ -271,7 +271,7 @@ internal class Program
         }
 
         PhotinoWindow selectorWindow = new PhotinoWindow(_mainWindow)
-            .SetTitle("Select Target Applications")
+            .SetTitle(IsGerman() ? "Zielanwendungen auswählen" : "Select Target Applications")
             .SetIconFile(_iconPath)
             .SetNotificationsEnabled(false)
             .SetUseOsDefaultSize(false)
@@ -292,6 +292,12 @@ internal class Program
 
                 if (type == "selectorReady")
                 {
+                    selectorWindow.SendWebMessage(JsonSerializer.Serialize(new
+                    {
+                        type = "language",
+                        lang = IsGerman() ? "de" : "en"
+                    }));
+
                     if (Interlocked.Exchange(ref catalogRequested, 1) == 0)
                         _ = LoadProcessCatalogAsync(selectorWindow);
 
@@ -363,7 +369,7 @@ internal class Program
                     {
                         isAvailable = catalog.Capability.IsAvailable,
                         code = catalog.Capability.Code,
-                        message = catalog.Capability.Message
+                        message = LocalizeProcessFilterCapabilityMessage(catalog.Capability)
                     },
                     items = catalog.Processes.Select(process => new
                     {
@@ -419,8 +425,7 @@ internal class Program
             processId,
             startTimeUtcTicks = startTimeUtcTicks.ToString(CultureInfo.InvariantCulture),
             isSelected = accepted && isSelected,
-            accepted,
-            message = accepted ? string.Empty : "The application has exited. Refresh the selector to update the list."
+            accepted
         }));
     }
 
@@ -433,8 +438,7 @@ internal class Program
         {
             type = "selectionExpired",
             processId = instanceId.ProcessId,
-            startTimeUtcTicks = instanceId.StartTimeUtcTicks.ToString(CultureInfo.InvariantCulture),
-            message = "The selected application exited. Application filtering was updated."
+            startTimeUtcTicks = instanceId.StartTimeUtcTicks.ToString(CultureInfo.InvariantCulture)
         });
 
         _ = SendSelectorMessageAsync(selectorWindow, payload);
@@ -459,8 +463,30 @@ internal class Program
             type = "processFilterCapability",
             isAvailable = capability.IsAvailable,
             code = capability.Code,
-            message = capability.Message
+            message = LocalizeProcessFilterCapabilityMessage(capability)
         }));
+    }
+
+    private static bool IsGerman() =>
+        string.Equals(_settings.Language, "de", StringComparison.OrdinalIgnoreCase);
+
+    private static string LocalizeProcessFilterCapabilityMessage(ProcessFilterCapability capability)
+    {
+        if (!IsGerman())
+            return capability.Message;
+
+        return capability.Code switch
+        {
+            "available" => "Die Anwendungsfilterung ist verfügbar.",
+            "enum-windows-failed" => "Windows konnte die sichtbaren Anwendungsfenster nicht ermitteln.",
+            "x11-unavailable" => "Die Anwendungsfilterung benötigt eine verfügbare X11-Sitzung.",
+            "ewmh-unavailable" => "Der X11-Fenstermanager stellt die erforderlichen EWMH-Eigenschaften nicht bereit.",
+            "missing-wmctrl" => "Die Anwendungsfilterung benötigt wmctrl, um Anwendungsfenster zu ermitteln.",
+            "enumeration-failed" => "Die sichtbaren Anwendungsfenster konnten nicht ermittelt werden.",
+            _ => capability.IsAvailable
+                ? "Die Anwendungsfilterung ist verfügbar."
+                : "Die Anwendungsfilterung ist nicht verfügbar."
+        };
     }
 
     static private IProcessEnumerator CreateProcessEnumerator()
